@@ -1,37 +1,95 @@
-## Welcome to GitHub Pages
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+import mglearn
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import GridSearchCV
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.pipeline import Pipeline
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.neural_network import MLPClassifier
 
-You can use the [editor on GitHub](https://github.com/jchen6912/patients/edit/master/README.md) to maintain and preview the content for your website in Markdown files.
+mydata = pd.read_csv("patients.csv")
 
-Whenever you commit to this repository, GitHub Pages will run [Jekyll](https://jekyllrb.com/) to rebuild the pages in your site, from the content in your Markdown files.
+#Create dummy variables
+gender_dummies = pd.get_dummies(mydata['Gender'])
+day_dummies = pd.get_dummies(mydata['DayOfTheWeek'])
+status_dummies = pd.get_dummies(mydata['Status'])
+df = pd.concat([mydata,gender_dummies,day_dummies,status_dummies],axis=1)
 
-### Markdown
+dataframe = df.drop(['Gender','Status','AppointmentRegistration','ApointmentData','DayOfTheWeek','Show-Up'], 1)
+dataframe = dataframe[dataframe.Sms_Reminder != 2]
 
-Markdown is a lightweight and easy-to-use syntax for styling your writing. It includes conventions for
+#Create train, validate, and test datasets
+train, validate, test = np.split(dataframe.sample(frac=1), [int(.6*len(dataframe)), int(.8*len(dataframe))])
 
-```markdown
-Syntax highlighted code block
+X_train = train.ix[:,0:18]
+X_validate = validate.ix[:,0:18]
+X_test = test.ix[:,0:18]
+y_train = list(train['No-Show'].values)
+y_validate = list(validate['No-Show'].values)
+y_test = list(test['No-Show'].values)
 
-# Header 1
-## Header 2
-### Header 3
+#Fit decision tree model
+pipe = Pipeline([("scaler", MinMaxScaler()), ("tree", DecisionTreeClassifier())])
 
-- Bulleted
-- List
+param_grid = {'tree__max_depth': [1, 2, 3, 4, 5, 10],
+              'tree__min_samples_split': [2, 3, 4, 5, 10, 15]}
 
-1. Numbered
-2. List
+grid = GridSearchCV(pipe, param_grid=param_grid, cv=5).fit(X_train, y_train)
 
-**Bold** and _Italic_ and `Code` text
+print("Best cross-validation accuracy: {:.4f}".format(grid.best_score_))
+print("Validate set score: {:.4f}".format(grid.score(X_validate, y_validate)))
+print("Best parameters: {}".format(grid.best_params_))
 
-[Link](url) and ![Image](src)
-```
+results = pd.DataFrame(grid.cv_results_)
+scores = np.array(results.mean_test_score).reshape(6, 6)
+mglearn.tools.heatmap(scores, xlabel='min_samples_split', xticklabels=param_grid['tree__min_samples_split'],
+                      ylabel='max_depth', yticklabels=param_grid['tree__max_depth'], cmap="viridis")
 
-For more details see [GitHub Flavored Markdown](https://guides.github.com/features/mastering-markdown/).
+plt.show()
 
-### Jekyll Themes
+#Fit random forests model
+pipe = Pipeline([("scaler", MinMaxScaler()), ("rf", RandomForestClassifier())])
 
-Your Pages site will use the layout and styles from the Jekyll theme you have selected in your [repository settings](https://github.com/jchen6912/patients/settings). The name of this theme is saved in the Jekyll `_config.yml` configuration file.
+param_grid = {'rf__n_estimators': [10, 20, 30, 40, 50, 100],
+              'rf__max_depth': [1, 2, 3, 4, 5, 10]}
 
-### Support or Contact
+grid = GridSearchCV(pipe, param_grid=param_grid, cv=5).fit(X_train, y_train)
 
-Having trouble with Pages? Check out our [documentation](https://help.github.com/categories/github-pages-basics/) or [contact support](https://github.com/contact) and we’ll help you sort it out.
+print("Best cross-validation accuracy: {:.4f}".format(grid.best_score_))
+print("Validate set score: {:.4f}".format(grid.score(X_validate, y_validate)))
+print("Best parameters: {}".format(grid.best_params_))
+
+results = pd.DataFrame(grid.cv_results_)
+scores = np.array(results.mean_test_score).reshape(6, 6)
+mglearn.tools.heatmap(scores, xlabel='max_depth', xticklabels=param_grid['rf__max_depth'],
+                      ylabel='n_estimators', yticklabels=param_grid['rf__n_estimators'], cmap="viridis")
+
+plt.show()
+
+#Fit multilayer perceptron model
+pipe = Pipeline([("scaler", MinMaxScaler()), ("mlp", MLPClassifier(max_iter=1000000))])
+
+param_grid = {'mlp__alpha': [0.001, 0.01, 0.1, 1, 10, 100],
+              'mlp__hidden_layer_sizes': [10, 50, 100, 250, 500, 1000]}
+
+grid = GridSearchCV(pipe, param_grid=param_grid, cv=5).fit(X_train, y_train)
+
+print("Best cross-validation accuracy: {:.4f}".format(grid.best_score_))
+print("Validate set score: {:.4f}".format(grid.score(X_validate, y_validate)))
+print("Best parameters: {}".format(grid.best_params_))
+
+results = pd.DataFrame(grid.cv_results_)
+scores = np.array(results.mean_test_score).reshape(6, 6)
+mglearn.tools.heatmap(scores, xlabel='hidden_layer_sizes', xticklabels=param_grid['mlp__hidden_layer_sizes'],
+                      ylabel='alpha', yticklabels=param_grid['mlp__alpha'], cmap="viridis")
+
+plt.show()
+
+#Fit top model with best parameters
+mlp = MLPClassifier(hidden_layer_sizes=[100], alpha=0.01).fit(X_train, y_train)
+print("Accuracy on test set: {:.4f}".format(mlp.score(X_test, y_test)))
